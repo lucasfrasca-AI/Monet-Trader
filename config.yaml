@@ -1,0 +1,347 @@
+# Monet-Trader risk + universe configuration.
+# Single source of truth for all risk parameters. Scripts must read from here.
+# Owner-edits only between routine runs. Do not modify from inside a routine.
+
+universe:
+  tickers:
+    - NVDA
+    - MSFT
+    - AIQ
+    - DTCR
+    - LLY
+    - LMT
+    - TSLA
+    - ISRG
+    - XOM
+    - FCX
+
+direction:
+  long_enabled: true
+  short_enabled: true
+
+# Conviction-tiered position sizing (% of equity).
+conviction:
+  high:
+    label: "Strong Buy / Strong Sell + DeepSeek concurs"
+    min_pct: 0.08
+    max_pct: 0.10
+  medium:
+    label: "Buy / Sell or Overweight / Underweight"
+    min_pct: 0.05
+    max_pct: 0.07
+  hold:
+    label: "Hold — no new entry"
+    min_pct: 0.0
+    max_pct: 0.0
+
+# Stop-loss config.
+stops:
+  atr_multiplier: 2.0          # 2x 14-day ATR
+  atr_period_days: 14
+  floor_pct: 0.03              # never tighter than 3%
+  ceiling_pct: 0.08            # never wider than 8%
+
+# Take-profit ladder.
+take_profit:
+  tp1_r_multiple: 1.0          # TP1 at 1x stop distance
+  tp1_size_fraction: 0.5       # sell 50% at TP1
+  tp2_r_multiple: 2.0          # TP2 at 2x stop distance
+  tp2_size_fraction: 0.5       # sell remaining 50%
+  trail_to_breakeven_after_tp1: true
+
+# Per-trade risk.
+per_trade:
+  max_portfolio_risk_pct: 0.01 # never risk more than 1% of equity per trade
+
+# Asymmetric long vs short caps.
+position_caps:
+  max_long_position_pct: 0.10
+  max_short_position_pct: 0.07
+
+# Portfolio-level controls.
+portfolio:
+  max_concurrent_positions: 8
+  max_sector_concentration_pct: 0.30
+  max_long_exposure_pct: 0.80
+  max_short_exposure_pct: 0.30
+  max_net_exposure_pct: 0.60   # |longs - shorts| cap
+  daily_loss_cap_pct: 0.04
+  weekly_loss_cap_pct: 0.08
+
+# Account-safety kill switches.
+kill_switches:
+  starting_balance_usd: 100000
+  reduce_size_threshold_pct: 0.95   # equity < 95% of start -> halve sizes
+  reduce_size_factor: 0.5           # multiplier applied to qty when above triggers
+  halt_threshold_pct: 0.90          # equity < 90% of start -> halt new orders
+  vix_high_threshold: 35.0          # VIX > 35 -> cap position size at 5%
+  vix_high_max_position_pct: 0.05
+  alpaca_failure_minutes: 5         # API down >5 min -> critical alert + halt
+
+# Pre-trade symbol filters.
+filters:
+  earnings_blackout_hours: 48
+  min_avg_daily_volume_shares: 5_000_000
+  max_spread_pct: 0.001             # 0.1% bid-ask
+  hard_to_borrow_blocks_short: true
+
+# Sector mapping (used for concentration check).
+sectors:
+  NVDA: technology
+  MSFT: technology
+  AIQ: technology       # AI-themed ETF, treat as tech for concentration
+  DTCR: technology      # data centre / digital infra REIT ETF
+  LLY: healthcare
+  ISRG: healthcare
+  LMT: industrials
+  TSLA: consumer_discretionary
+  XOM: energy
+  FCX: materials
+
+# Discord embed colours (decimal RGB).
+discord_colours:
+  fill: 3066993            # green
+  stop_loss: 15158332      # red
+  summary: 15844367        # yellow
+  warning: 15105570        # orange
+  info: 3447003            # blue
+  critical: 10038562       # dark red
+
+# Skill invocation policy (referenced by routines, enforced via CLAUDE.md rules).
+skill_policy:
+  pre_market: ["trade-quick"]
+  new_position_entry: ["trade-thesis"]
+  earnings_within_days: 7
+  earnings_skill: "trade-earnings"
+  weekly_review: ["trade-portfolio", "trade-report-pdf"]
+  forbidden_in_routines: ["trade-analyze"]
+
+# ---------------------------------------------------------------------------
+# Per-ticker overrides — applied by risk_check.apply_ticker_overrides
+# ---------------------------------------------------------------------------
+# Keys (all optional):
+#   long_only:               if true, validate_new_position rejects shorts
+#   max_conviction:          "high" | "medium" — caps the conviction tier
+#   atr_multiplier:          replaces stops.atr_multiplier (number or
+#                            mapping {long: x, short: y} for direction-specific)
+#   max_long_pct / max_short_pct: per-side position cap override
+#   earnings_blackout_hours: per-ticker override of filters.earnings_blackout_hours
+#   low_activity:            true = expect <10% of trades on this ticker
+#                            (informational; conviction tiering self-deprioritises)
+ticker_overrides:
+  MSFT:
+    long_only: true
+  ISRG:
+    long_only: true
+  LMT:
+    long_only: true
+    max_conviction: medium
+  TSLA:
+    max_conviction: medium
+    atr_multiplier: 1.5
+  NVDA:
+    atr_multiplier:
+      long: 2.0
+      short: 1.5
+    max_short_pct: 0.05
+    short_earnings_blackout_hours: 336    # 14 days for NVDA shorts
+  LLY:
+    earnings_blackout_hours: 168          # 7 days
+  AIQ:
+    low_activity: true
+  DTCR:
+    low_activity: true
+
+# ---------------------------------------------------------------------------
+# Conviction scoring — score → position_pct lookup tables.
+# Routine ticks each criterion ✓/✗ in research_log.md and looks up here.
+# ---------------------------------------------------------------------------
+scoring:
+  long_score_to_pct:
+    6: 0.10
+    5: 0.08
+    4: 0.06   # falls to medium tier
+  long_score_floor: 4
+  short_score_to_pct:
+    6: 0.07
+    5: 0.05
+  short_score_floor: 5
+  # NVDA short requires ALL 6 (handled in risk_check via ticker_overrides)
+  nvda_short_score_floor: 6
+  vix_downgrade_threshold: 25.0
+  vix_max_medium_threshold: 35.0
+
+# ---------------------------------------------------------------------------
+# Post-earnings handling (day+1 reaction trading).
+# ---------------------------------------------------------------------------
+post_earnings:
+  window_days: 1                  # day+1 only
+  size_factor: 0.5
+  atr_multiplier: 1.5
+  challenger_must_address_reaction: true
+  no_premarket_entry: true        # global rule but also explicit here
+
+# ---------------------------------------------------------------------------
+# FDA / clinical event handling (per-ticker).
+# ---------------------------------------------------------------------------
+fda_blackout:
+  LLY:
+    blackout_hours_before: 48
+    blackout_hours_after: 24
+    triggers:
+      - "major Phase 3 readout"
+      - "PDUFA date"
+      - "label expansion (Mounjaro/Zepbound)"
+      - "oral GLP-1 competitor data"
+  ISRG:
+    yellow_flag_days_before: 7
+    size_factor: 0.5
+    blackout_hours_before: 0      # no blackout, just size cut
+    blackout_hours_after: 0
+    triggers:
+      - "510(k) clearance"
+      - "PMA approval"
+
+# ---------------------------------------------------------------------------
+# Macro event blackout (FOMC / CPI / NFP / PCE).
+# Pre-market routine populates known_events_today via web search;
+# fallback list of known upcoming dates can be added below.
+# ---------------------------------------------------------------------------
+macro_event_blackout:
+  events: ["FOMC", "FOMC_minutes", "CPI", "PCE", "NFP"]
+  stop_tighten_pct: 0.25            # existing positions: stops -25% on event days
+  block_new_entries: true
+  known_upcoming_events: []         # owner can add: [{date: "2026-05-14", event: "CPI"}]
+
+# ---------------------------------------------------------------------------
+# Macro overlays — same-day cross-asset filters.
+# Implementation note: Alpaca's market-data API is US-equity/ETF only.
+# We use ETF/proxy symbols below (Option A: ETF proxies).
+# ---------------------------------------------------------------------------
+macro_overlays:
+  enabled: true
+  # Index symbols (^VIX, ^TNX) are fetched via yfinance; ETF symbols via Alpaca.
+  proxies:
+    wti: "USO"        # WTI crude proxy ETF (Alpaca)
+    copper: "CPER"    # copper futures proxy ETF (Alpaca)
+    rates_10y: "^TNX" # CBOE 10-Year Treasury Yield Index — direct (yfinance)
+    spy: "SPY"        # broad market (Alpaca)
+    vix: "^VIX"       # CBOE Volatility Index — direct (yfinance)
+  rules:
+    - id: xom_wti_long_block
+      symbol: XOM
+      direction: long
+      proxy: wti
+      proxy_change_threshold_pct: -0.005    # WTI down >0.5% intraday
+      action: block
+    - id: xom_wti_short_block
+      symbol: XOM
+      direction: short
+      proxy: wti
+      proxy_change_threshold_pct: 0.005     # WTI up >0.5%
+      action: block
+    - id: fcx_copper_long_block
+      symbol: FCX
+      direction: long
+      proxy: copper
+      proxy_change_threshold_pct: -0.005
+      action: block
+    - id: fcx_copper_short_block
+      symbol: FCX
+      direction: short
+      proxy: copper
+      proxy_change_threshold_pct: 0.005
+      action: block
+    # 10Y rate rules use bps_change_threshold (positive = yields rising)
+    # against ^TNX bps_change_intraday from yfinance — never TLT % math.
+    - id: dtcr_yield_long_block
+      symbol: DTCR
+      direction: long
+      proxy: rates_10y
+      bps_change_threshold: 5               # 10Y yield up >5bps intraday -> block DTCR longs
+      action: block
+    - id: tech_yield_downgrade
+      symbols: [NVDA, MSFT, TSLA]
+      direction: long
+      proxy: rates_10y
+      bps_change_threshold: 10              # 10Y up >10bps -> tech longs max medium
+      action: downgrade_to_medium
+    - id: spy_basket_downgrade
+      symbols: ALL                          # all basket longs
+      direction: long
+      proxy: spy
+      proxy_below_20dma: true
+      proxy_change_threshold_pct: -0.005    # SPY down >0.5% intraday
+      action: downgrade_to_medium
+
+# ---------------------------------------------------------------------------
+# News classifier thresholds (used by midday + close routines).
+# ---------------------------------------------------------------------------
+news:
+  indirect_strong_negative_thresholds:
+    peer_earnings_miss_pct: 0.15           # peer reported miss > 15%
+    sector_etf_intraday_drop_pct: 0.03     # sector ETF down > 3% intraday
+  indirect_underwater_size_reduction: 0.5  # cut held position size 50%
+  trail_stop_to_breakeven_on_indirect_profitable: true
+
+# ---------------------------------------------------------------------------
+# Exit triggers (layered cuts in midday + post-open routines).
+# ---------------------------------------------------------------------------
+exit_triggers:
+  setup_invalidation_minutes: 30
+  setup_invalidation_atr_mult: 1.0          # down >1× ATR within window -> cut
+  trade_kill_r_multiple: -1.5               # at -1.5R any time intraday -> cut
+  time_discipline_cutoff_hour_et: 12        # by 12:00 ET
+  time_discipline_r_threshold: -0.5         # underwater > -0.5R -> cut
+  time_discipline_tp1_proximity_r: 0.25     # unless within 0.25R of TP1
+  end_of_horizon_days: 2                    # market exit if open at close of day 2
+
+# ---------------------------------------------------------------------------
+# Re-entry rules.
+# ---------------------------------------------------------------------------
+re_entry:
+  daily_caps:
+    high_density:
+      tickers: [TSLA, FCX, XOM]             # NVDA-long handled separately
+      cap: 2
+    medium_density:
+      tickers: [MSFT, LLY, ISRG, LMT, AIQ, DTCR]
+      cap: 1
+  nvda:
+    long_daily_cap: 2
+    short_daily_cap: 1
+  weekly_ceiling:
+    high_density: 4
+    medium_density: 3
+    nvda_long: 4
+    nvda_short: 3
+  same_day_size_factor: 0.5
+  next_session_resets_size: true
+  direction_flip:
+    cooling_period_hours: 2
+    requires_distinct_catalyst: true
+  lockout:
+    net_loss_stops_threshold: 2
+    lookback_sessions: 5
+    duration: "until_next_monday_open"
+    log_to: "memory/lessons.md"
+
+# ---------------------------------------------------------------------------
+# Entry constraints (time-of-day / time-of-week).
+# ---------------------------------------------------------------------------
+entry_constraints:
+  no_premarket_entries: true
+  market_open_hour_et: 9
+  market_open_minute_et: 30
+  friday_no_new_entries_after_hour_et: 14   # 14:00 ET Friday cutoff
+
+# ---------------------------------------------------------------------------
+# Sector ETF mapping (for sector-rotation-out short signal #3).
+# ---------------------------------------------------------------------------
+sector_etfs:
+  technology: XLK
+  healthcare: XLV
+  industrials: XLI
+  consumer_discretionary: XLY
+  energy: XLE
+  materials: XLB
