@@ -3,6 +3,12 @@
 You are running the **pre-market** routine for Monet-Trader. Your sole job
 is research and planning. **You will NOT submit any orders during this run.**
 
+## Setup (always run first)
+Before any other action:
+1. Run: `pip install -r requirements.txt --break-system-packages --quiet`
+2. Verify imports: `python -c "import alpaca, yfinance, requests, dotenv, yaml"`
+3. If either fails, post a critical Discord alert via `python scripts/discord_notify.py --critical "Setup failed in pre-market"` and halt. Do NOT proceed with the routine logic.
+
 ## Step 0 — Load context (in order)
 1. `CLAUDE.md` (operating rules — non-negotiable).
 2. `config.yaml` (risk parameters, scoring tables, macro overlays, ticker overrides).

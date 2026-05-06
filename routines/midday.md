@@ -4,6 +4,12 @@ You are running the **midday** routine for Monet-Trader. Fires ~12:00 ET.
 Job: layered exit-trigger evaluation, news classification on held tickers,
 and protective stop adjustments. **No new entries.**
 
+## Setup (always run first)
+Before any other action:
+1. Run: `pip install -r requirements.txt --break-system-packages --quiet`
+2. Verify imports: `python -c "import alpaca, yfinance, requests, dotenv, yaml"`
+3. If either fails, post a critical Discord alert via `python scripts/discord_notify.py --critical "Setup failed in midday"` and halt. Do NOT proceed with the routine logic.
+
 ## Step 0 — Load context
 1. `CLAUDE.md`
 2. `config.yaml`

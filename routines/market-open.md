@@ -3,6 +3,12 @@
 You are running the **market-open** routine for Monet-Trader. Fires at
 09:30 ET. Job: execute today's pre-market plan with discipline.
 
+## Setup (always run first)
+Before any other action:
+1. Run: `pip install -r requirements.txt --break-system-packages --quiet`
+2. Verify imports: `python -c "import alpaca, yfinance, requests, dotenv, yaml"`
+3. If either fails, post a critical Discord alert via `python scripts/discord_notify.py --critical "Setup failed in market-open"` and halt. Do NOT proceed with the routine logic.
+
 ## Step 0 — Load context
 1. `CLAUDE.md`
 2. `config.yaml`

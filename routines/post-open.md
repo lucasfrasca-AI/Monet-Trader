@@ -9,6 +9,12 @@ This routine exists because the 30-minute setup-invalidation rule cannot
 be enforced by either market-open (it ends at ~09:35) or midday (12:00 ET
 is past the window). Cron: `0 14 * * 1-5` UTC (DST) / `0 15` UTC (standard).
 
+## Setup (always run first)
+Before any other action:
+1. Run: `pip install -r requirements.txt --break-system-packages --quiet`
+2. Verify imports: `python -c "import alpaca, yfinance, requests, dotenv, yaml"`
+3. If either fails, post a critical Discord alert via `python scripts/discord_notify.py --critical "Setup failed in post-open"` and halt. Do NOT proceed with the routine logic.
+
 ## Step 0 — Load context
 1. `CLAUDE.md`
 2. `config.yaml`
